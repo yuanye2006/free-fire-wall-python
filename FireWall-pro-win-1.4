@@ -1,0 +1,110 @@
+import psutil
+import time
+import subprocess
+import json
+
+# 配置文件名，用于保存初始的防火墙规则配置
+CONFIG_FILE = "firewall_config.json"
+
+# 获取当前的网络流量
+def get_current_traffic():
+    net_io = psutil.net_io_counters()
+    return net_io.bytes_recv
+
+# 获取当前的网络连接数
+def get_current_connections():
+    return len(psutil.net_connections(kind='inet'))
+
+# 执行命令并返回输出
+def execute_command(command):
+    result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    return result
+
+# 获取指定端口的规则信息
+def port_rule_info(port):
+    result = execute_command(f'netsh advfirewall firewall show rule dir=in protocol=TCP localport={port} verbose')
+    rule_info = {
+        "exists": f"LocalPort: {port}" in result.stdout,
+        "enabled": "Enabled: Yes" in result.stdout,
+        "action": "Action: Allow" if "Action: Allow" in result.stdout else "Action: Block"
+    }
+    return rule_info
+
+# 阻止指定的端口
+def block_ports(ports):
+    for port in ports:
+        rule_name = f"临时策略{port}"
+        execute_command(f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=block protocol=TCP localport={port}')
+
+# 保存初始配置
+def save_initial_config(ports):
+    config = {}
+    for port in ports:
+        config[port] = port_rule_info(port)
+    with open(CONFIG_FILE, 'w') as file:
+        json.dump(config, file)
+
+# 恢复初始配置
+def restore_initial_config():
+    with open(CONFIG_FILE, 'r') as file:
+        config = json.load(file)
+    for port, rule_info in config.items():
+        rule_name = f"临时策略{port}"
+        if rule_info["exists"]:
+            if rule_info["enabled"]:
+                execute_command(f'netsh advfirewall firewall set rule name="{rule_name}" dir=in new enable=yes')
+            else:
+                execute_command(f'netsh advfirewall firewall set rule name="{rule_name}" dir=in new enable=no')
+            if rule_info["action"] == "Action: Allow":
+                execute_command(f'netsh advfirewall firewall set rule name="{rule_name}" dir=in new action=allow')
+            else:
+                execute_command(f'netsh advfirewall firewall set rule name="{rule_name}" dir=in new action=block')
+        else:
+            execute_command(f'netsh advfirewall firewall delete rule name="{rule_name}" dir=in')
+
+# 主函数
+def main():
+    try:
+        # 获取用户输入的阈值和端口
+        THRESHOLD_TRAFFIC = float(input("请输入流量阈值 (例如：1 表示1MB)：")) * 1024 * 1024
+        THRESHOLD_CONNECTIONS = int(input("请输入连接数阈值 (例如：350)："))
+        CHECK_INTERVAL = int(input("请输入检查间隔时间 (秒)："))
+        PORTS_TO_BLOCK = list(map(int, input("请输入要阻止的端口列表，使用逗号分隔 (例如：8080,8081,8082)：").split(',')))
+
+        # 保存初始防火墙配置
+        save_initial_config(PORTS_TO_BLOCK)
+        
+        BLOCKED = False
+        prev_traffic = get_current_traffic()
+
+        # 循环监控
+        while True:
+            time.sleep(CHECK_INTERVAL)
+            current_traffic = get_current_traffic()
+            traffic_diff = current_traffic - prev_traffic
+            prev_traffic = current_traffic
+            current_connections = get_current_connections()
+
+            # 输出当前的流量和连接数
+            print(f"Current traffic input: {traffic_diff / (1024 * 1024):.2f} MB/s, Current connections: {current_connections}")
+
+            # 根据流量和连接数来决定是否阻止指定的端口
+            if (traffic_diff > THRESHOLD_TRAFFIC or current_connections > THRESHOLD_CONNECTIONS) and not BLOCKED:
+                print("High traffic or connection count detected! Blocking specified ports...")
+                block_ports(PORTS_TO_BLOCK)
+                BLOCKED = True
+            elif traffic_diff <= THRESHOLD_TRAFFIC and current_connections <= THRESHOLD_CONNECTIONS and BLOCKED:
+                print("Traffic and connection count are back to normal. Restoring firewall configurations...")
+                restore_initial_config()
+                BLOCKED = False
+
+    # 如果用户手动中断程序，恢复初始的防火墙配置
+    except KeyboardInterrupt:
+        print("Exiting and restoring firewall configurations...")
+        restore_initial_config()
+    except ValueError:
+        print("Invalid input provided. Please ensure you enter correct values.")
+
+# 程序入口
+if __name__ == "__main__":
+    main()
