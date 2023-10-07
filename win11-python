@@ -20,21 +20,21 @@ def get_current_connections():
 
 def block_new_ips():
     """阻止所有新的IP连接"""
-    os.system(f"netsh advfirewall firewall add rule name=\"BlockAllInbound\" dir=in action=block")
+    os.system(f'netsh advfirewall firewall add rule name="BlockAllInbound" dir=in action=block')
 
 def unblock_new_ips():
     """允许所有新的IP连接"""
-    os.system(f"netsh advfirewall firewall delete rule name=\"BlockAllInbound\"")
+    os.system(f'netsh advfirewall firewall delete rule name="BlockAllInbound"')
 
 def block_ports(ports):
     """阻止指定的端口列表"""
     for port in ports:
-        os.system(f"netsh advfirewall firewall add rule name=\"BlockPort{port}\" dir=in action=block protocol=TCP localport={port}")
+        os.system(f'netsh advfirewall firewall add rule name="BlockPort{port}" dir=in action=block protocol=TCP localport={port}')
 
 def unblock_ports(ports):
     """解除对指定端口列表的阻止"""
     for port in ports:
-        os.system(f"netsh advfirewall firewall delete rule name=\"BlockPort{port}\"")
+        os.system(f'netsh advfirewall firewall delete rule name="BlockPort{port}"')
 
 def main():
     prev_traffic = get_current_traffic()
@@ -50,6 +50,7 @@ def main():
         # 实时显示输入的流量大小 (以MB/s为单位) 和当前连接数
         print(f"Current traffic input: {traffic_diff / (1024 * 1024):.2f} MB/s, Current connections: {current_connections}")
 
+        global BLOCKED
         if (traffic_diff > THRESHOLD_TRAFFIC or current_connections > THRESHOLD_CONNECTIONS) and not BLOCKED:
             print("High traffic or connection count detected! Blocking new IPs and specified ports...")
             block_new_ips()
