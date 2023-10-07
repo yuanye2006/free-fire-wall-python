@@ -2,13 +2,6 @@ import psutil
 import time
 import os
 
-# 设置流量阈值 (例如：1MB)
-THRESHOLD_TRAFFIC = 1 * 1024 * 1024  # 1MB in bytes
-THRESHOLD_CONNECTIONS = 100  # 设置连接数阈值
-CHECK_INTERVAL = 1  # 检查间隔时间 (秒)
-BLOCKED = False
-PORTS_TO_BLOCK = [8080, 8081, 8082]  # 要阻止的端口列表
-
 def get_current_traffic():
     """获取当前的网络流量"""
     net_io = psutil.net_io_counters()
@@ -37,6 +30,18 @@ def unblock_ports(ports):
         os.system(f'netsh advfirewall firewall delete rule name="BlockPort{port}"')
 
 def main():
+    try:
+        # 用户输入设置
+        THRESHOLD_TRAFFIC = float(input("请输入流量阈值 (例如：1 表示1MB)：")) * 1024 * 1024
+        THRESHOLD_CONNECTIONS = int(input("请输入连接数阈值 (例如：350)："))
+        CHECK_INTERVAL = int(input("请输入检查间隔时间 (秒)："))
+        PORTS_TO_BLOCK = list(map(int, input("请输入要阻止的端口列表，使用逗号分隔 (例如：8080,8081,8082)：").split(',')))
+        
+    except ValueError:
+        print("输入无效，请确保输入正确的数字格式。")
+        return
+
+    BLOCKED = False
     prev_traffic = get_current_traffic()
 
     while True:
@@ -50,7 +55,6 @@ def main():
         # 实时显示输入的流量大小 (以MB/s为单位) 和当前连接数
         print(f"Current traffic input: {traffic_diff / (1024 * 1024):.2f} MB/s, Current connections: {current_connections}")
 
-        global BLOCKED
         if (traffic_diff > THRESHOLD_TRAFFIC or current_connections > THRESHOLD_CONNECTIONS) and not BLOCKED:
             print("High traffic or connection count detected! Blocking new IPs and specified ports...")
             block_new_ips()
